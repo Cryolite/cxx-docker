@@ -1,6 +1,6 @@
 FROM debian:latest AS gcc-build
 
-ENV GCC_VERSION 7.3.0
+ENV GCC_VERSION 8.1.0
 
 RUN set -ex; \
   apt-get update; \
