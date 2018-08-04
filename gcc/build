@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+
+set -e
+
+SCRIPT_DIR="$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")"
+CXX_DOCKER_ROOT_DIR="$(readlink -e "$SCRIPT_DIR/..")"
+
+PS4='+${BASH_SOURCE[0]}:$LINENO: '
+if test -t 1 && tput setaf 1 &>/dev/null; then
+  if test "$(tput colors)" -eq 256; then
+    PS4='$(tput setaf 10)'$PS4'$(tput sgr0)'
+  else
+    PS4='$(tput setaf 2)'$PS4'$(tput sgr0)'
+  fi
+fi
+
+set -x
+set -o pipefail
+
+function print_usage ()
+{
+  cat <<'EOF'
+Usage: build [OPTION]...
+Build a Docker image.
+
+  --version=(<version>|latest) Specify the version of GCC to build.
+  -h, --help                 Display this help and exit.
+EOF
+}
+
+function print_error_message ()
+{
+  if test -t 2 && tput setaf 1 &>/dev/null; then
+    if test "$(tput colors)" -eq 256; then
+      echo "$(tput setaf 9)$1$(tput sgr0)" >&2
+    else
+      echo "$(tput setaf 1)$1$(tput sgr0)" >&2
+    fi
+  else
+    echo "$1" >&2
+  fi
+}
+
+if getopt -T; test $? -ne 4; then
+  set +x
+  print_error_message "build: error: \`getopt' is not an enhanced version."
+  exit 1
+fi
+
+opts="$(getopt -n build -l version:,help -- h "$@")"
+eval set -- "$opts"
+
+function on_invalid_argument ()
+{
+  print_error_message "build: error: An invalid argument \`$1'."
+  print_error_message "build: Try \`build --help' for more information."
+}
+
+while test $# -ne 0; do
+  arg="$1"
+  shift
+  if test "$expect_restargs" = yes; then
+    set +x
+    on_invalid_argument "$arg"
+    exit 1
+  fi
+  case "$arg" in
+  '--version')
+    if test $# -eq 0; then
+      set +x
+      print_error_message 'build: error: A logic error.'
+      exit 1
+    fi
+    version="$1"
+    shift
+    ;;
+  '-h'|'--help')
+    set +x
+    print_usage
+    exit 0
+    ;;
+  '--')
+    expect_restargs=yes
+    ;;
+  *)
+    set +x
+    on_invalid_argument "$arg"
+    exit 1
+    ;;
+  esac
+done
+
+if test "${version-UNDEFINED}" = UNDEFINED; then
+  version=latest
+fi
+if test "$version" = latest; then
+  version="$(curl -fLsS 'http://ftpmirror.gnu.org/gcc/'                                          \
+               | grep -Eo 'gcc-[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+/'                        \
+               | sed -e 's@gcc-\([[:digit:]]\{1,\}\.[[:digit:]]\{1,\}\.[[:digit:]]\{1,\}\)/@\1@' \
+               | sort -V | tail -n 1)"
+fi
+if ! echo "$version" | grep -Eq '[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+'; then
+  set +x
+  print_error_message "build: error: An invalid value \`$version' for \`--version' option."
+  exit 1
+fi
+
+(cd "$SCRIPT_DIR" && docker build --build-arg "VERSION=$version" -t "cryolite/gcc:$version" .)
